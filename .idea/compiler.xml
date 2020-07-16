@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile name="Maven default annotation processors profile" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <module name="chat-client" />
+        <module name="network-libraries" />
+        <module name="chat-server" />
+      </profile>
+    </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="chat" target="11" />
+      <module name="chat-client" target="11" />
+      <module name="chat-server" target="11" />
+      <module name="network-libraries" target="11" />
+    </bytecodeTargetLevel>
+  </component>
+</project>
