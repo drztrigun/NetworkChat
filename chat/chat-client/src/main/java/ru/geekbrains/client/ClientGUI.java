@@ -2,6 +2,7 @@ package ru.geekbrains.client;
 
 import ru.geekbrains.MessageSocketThread;
 import ru.geekbrains.MessageSocketThreadListener;
+import ru.geekbrains.chat.common.MessageLibrary;
 
 import javax.swing.*;
 import java.awt.*;
@@ -86,10 +87,13 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
         add(panelTop, BorderLayout.NORTH);
         add(panelBottom, BorderLayout.SOUTH);
 
+        panelBottom.setVisible(false);             //скрываем нижнюю панель
+
         cbAlwaysOnTop.addActionListener(this);  // делаем слушителя для фложочка cbAlwaysOnTop
         buttonSend.addActionListener(this);     //
         messageField.addActionListener(this);   //
         buttonLogin.addActionListener(this);    // обработка логина
+        buttonDisconnect.addActionListener(this); // обработка кнопки дисконект
 
         setVisible(true);
     }
@@ -106,11 +110,13 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
             try {
                 // используем для подключения поля ipAdress и порт
                 socket = new Socket(ipAddressField.getText(), Integer.parseInt(portField.getText()));
-                socketThread = new MessageSocketThread(this, "Client" + loginField.getText(), socket);
+                socketThread = new MessageSocketThread(this, "Client " + loginField.getText(), socket);
+
             } catch (IOException ioException) {
                 showError(ioException.getMessage());
             }
-
+        } else if (src == buttonDisconnect ){
+            socketThread.close();
         } else {
             throw new RuntimeException("Unsupported action: " + src);
         }
@@ -125,6 +131,9 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
         showError(msg);
     }
 
+    /*
+     * Отправка сообщений в сторону сервера
+     */
     public void sendMessage(String user, String msg) {
         if (msg.isEmpty()) {
             return;
@@ -133,9 +142,12 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
         putMessageInChat(user, msg);
         messageField.setText("");
         messageField.grabFocus();
-        socketThread.sendMessage(msg);   //отправка сообщения
+        socketThread.sendMessage(msg);   //отправка сообщения по сети
     }
 
+    /*
+     * Добавление новых сообщений в окно чата
+     */
     public void putMessageInChat(String user, String msg) {
         String messageToChat = String.format("%s <%s>: %s%n", sdf.format(Calendar.getInstance().getTime()), user, msg);
         chatArea.append(messageToChat);
@@ -154,6 +166,25 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
         JOptionPane.showMessageDialog(this, errorMsg, "Exception!", JOptionPane.ERROR_MESSAGE);
     }
 
+    // в момнет подлючения к серверу панель верхнняя скрывается, нижняя появляется
+    @Override
+    public void onSocketReady() {
+        panelTop.setVisible(false);
+        panelBottom.setVisible(true);
+        socketThread.sendMessage(MessageLibrary.getAuthRequestMessage(loginField.getText(),
+                new String(passwordField.getPassword())));
+    }
+
+    // в момнет отключения от сервера панель верхнняя появляется, нижняя скрывается
+    @Override
+    public void onSocketClosed() {
+        panelBottom.setVisible(false);
+        panelTop.setVisible(true);
+    }
+
+    /*
+     * Получение сообщений от сервера
+     */
     @Override
     public void onMessageReceived(String msg) {
         putMessageInChat("server", msg);

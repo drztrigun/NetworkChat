@@ -7,13 +7,15 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <module name="chat-client" />
-        <module name="network-libraries" />
         <module name="chat-server" />
+        <module name="chat-library" />
+        <module name="network-libraries" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
       <module name="chat" target="11" />
       <module name="chat-client" target="11" />
+      <module name="chat-library" target="11" />
       <module name="chat-server" target="11" />
       <module name="network-libraries" target="11" />
     </bytecodeTargetLevel>

@@ -1,13 +1,14 @@
 package ru.geekbrains.server;
 
 import ru.geekbrains.core.ChatServer;
+import ru.geekbrains.core.ChatServerListener;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 
-public class ServerGUI extends JFrame implements ActionListener, Thread.UncaughtExceptionHandler {
+public class ServerGUI extends JFrame implements ActionListener, Thread.UncaughtExceptionHandler, ChatServerListener {
 
     private static final int POS_X = 1000;
     private static final int POS_Y = 550;
@@ -37,7 +38,7 @@ public class ServerGUI extends JFrame implements ActionListener, Thread.Uncaught
         setTitle("Chat Server Admin Console");      // название окна
 
         setLayout(new GridLayout(1,2));   // создаем всего две кнопки
-        chatServer = new ChatServer();              // добавляем старт и стоп сервера
+        chatServer = new ChatServer(this);              // добавляем старт и стоп сервера
         buttonStart.addActionListener(this);      // добиваляем ActionListener для фиксации нажатия кнопки
         buttonStop.addActionListener(this);
 
@@ -69,6 +70,11 @@ public class ServerGUI extends JFrame implements ActionListener, Thread.Uncaught
                 t.getName(), e.getClass().getCanonicalName(), e.getMessage(), ste[0]);
         JOptionPane.showMessageDialog(this, msg, "Exception!", JOptionPane.ERROR_MESSAGE);
         System.exit(1);
+    }
+
+    @Override
+    public void onChatServerMessage(String msg) {
+
     }
 }
 
