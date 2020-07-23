@@ -14,6 +14,8 @@ public class ClientSessionThread extends MessageSocketThread {
     // сохраняем Ник пользователя
     private String nickname;
 
+    private boolean reconnected = false;
+
     public ClientSessionThread(MessageSocketThreadListener listener, String name, Socket socket) {
         super(listener, name, socket);
     }
@@ -48,5 +50,21 @@ public class ClientSessionThread extends MessageSocketThread {
 
     public void broadcast(String msg) {
         sendMessage(MessageLibrary.getBroadcastMessage(nickname, msg));
+    }
+
+    public void setAuthorized(boolean authorized){
+        isAuthorized = authorized;
+    }
+
+    public void setNickname(String nickname){
+        this.nickname = nickname;
+    }
+
+    public boolean isReconnected() {
+        return reconnected;
+    }
+
+    public void setReconnected(boolean reconnected) {
+        this.reconnected = reconnected;
     }
 }

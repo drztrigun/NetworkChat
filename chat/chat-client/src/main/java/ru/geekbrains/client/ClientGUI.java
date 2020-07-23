@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Calendar;
 
 
@@ -38,7 +39,9 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
 
     private final JList<String> listUsers = new JList<>();                         // список пользователей
     private SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy HH:mm:ss");  //формат записи сообщений
+    private final String WINDOW_TITLE = "Chat Client";
     private MessageSocketThread socketThread;
+    private String nickname;
 
     // отправляемое сообщение
 
@@ -48,6 +51,7 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
         SwingUtilities.invokeLater(new Runnable() {    //запускаем в отдельном потоке чтобы не загружать другой поток(Runnable)
             @Override   // переписываем метод
             public void run() {
+
                 new ClientGUI();    //запуск сервера
             }
         });
@@ -57,13 +61,13 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
         //переопределяем исключения
         Thread.setDefaultUncaughtExceptionHandler(this);
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        setTitle("Chat");                           // название окна
+        setTitle(WINDOW_TITLE);                           // название окна
         setSize(WIDTH, HEIGHT);
         setAlwaysOnTop(true);                       // по дефолту галочка всегда стоит
 
         // предзаполняем список используем setListData, так как у нас указаны строки
-        listUsers.setListData(new String[]{"user1", "user2", "user3", "user4", "user5",
-                "user6", "user7", "user8", "user9", "user-with-too-long-name-in-this-chat"});
+//        listUsers.setListData(new String[]{"user1", "user2", "user3", "user4", "user5",
+//                "user6", "user7", "user8", "user9", "user-with-too-long-name-in-this-chat"});
         JScrollPane scrollPaneUsers = new JScrollPane(listUsers);       // добавляем ползунки для списка пользователей
         JScrollPane scrollPaneChatArea = new JScrollPane(chatArea);     // добавляем ползунки для основного поля
         scrollPaneUsers.setPreferredSize(new Dimension(100, 0)); // фиксируем зазмер списка пользователей
@@ -104,7 +108,7 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
         if (src == cbAlwaysOnTop) {
             setAlwaysOnTop(cbAlwaysOnTop.isSelected());
         } else if (src == buttonSend || src == messageField) {
-            sendMessage(loginField.getText(), messageField.getText());
+            sendMessage(messageField.getText());
         } else if (src == buttonLogin) {
             Socket socket = null;
             try {
@@ -134,15 +138,17 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
     /*
      * Отправка сообщений в сторону сервера
      */
-    public void sendMessage(String user, String msg) {
+    public void sendMessage(String msg) {
         if (msg.isEmpty()) {
             return;
         }
         //23.06.2020 12:20:25 <Login>: сообщение
-        putMessageInChat(user, msg);
+        //если убрать эту строчку то в классе клиента надо убрать обработку по никам,
+        // чтобы север отправлял сообщение всем
+        putMessageInChat(nickname, msg);
         messageField.setText("");
         messageField.grabFocus();
-        socketThread.sendMessage(msg);   //отправка сообщения по сети
+        socketThread.sendMessage(MessageLibrary.getTypeBroadcastClient(nickname, msg));   //отправка сообщения по сети
     }
 
     /*
@@ -168,7 +174,7 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
 
     // в момнет подлючения к серверу панель верхнняя скрывается, нижняя появляется
     @Override
-    public void onSocketReady() {
+    public void onSocketReady(MessageSocketThread thread) {
         panelTop.setVisible(false);
         panelBottom.setVisible(true);
         socketThread.sendMessage(MessageLibrary.getAuthRequestMessage(loginField.getText(),
@@ -177,22 +183,66 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
 
     // в момнет отключения от сервера панель верхнняя появляется, нижняя скрывается
     @Override
-    public void onSocketClosed() {
+    public void onSocketClosed(MessageSocketThread thread) {
         panelBottom.setVisible(false);
         panelTop.setVisible(true);
+        setTitle(WINDOW_TITLE);
+        listUsers.setListData(new String[0]);
     }
 
     /*
      * Получение сообщений от сервера
      */
     @Override
-    public void onMessageReceived(String msg) {
-        putMessageInChat("server", msg);
+    public void onMessageReceived(MessageSocketThread thread, String msg) {
+        handleMessage(msg);
     }
 
     @Override
-    public void onException(Throwable throwable) {
+    public void onException(MessageSocketThread thread, Throwable throwable) {
         throwable.printStackTrace();
         showError(throwable.getMessage());
+    }
+
+
+    //обработка сообщений на стороне клиента(но так лучше не делать, делать надо в MessageLibrary)
+    private void handleMessage(String msg){
+        String[] valeus = msg.split(MessageLibrary.DELIMITER);
+        switch (MessageLibrary.getMessageType(msg)){
+            case AUTH_ACCEPT:
+                this.nickname = valeus[2];  // получаем nickname из вне
+                setTitle(WINDOW_TITLE + " autorized with nickname: " + this.nickname);
+                break;
+            case AUTH_DENIED:
+                putMessageInChat("server", msg);
+                socketThread.close();
+                break;
+            case TYPE_BROADCAST:
+                putMessageInChat(valeus[2], valeus[3]);
+                break;
+            case MSG_FORMAT_ERROR:
+                putMessageInChat("server", msg);
+                break;
+            case USER_LIST:
+                //обрезаем строку сначала, так как знаем какого формата будет строка
+                // /user_list##user1##user2##user3##....
+                String users = msg.substring(MessageLibrary.USER_LIST.length() + MessageLibrary.DELIMITER.length());
+                // user1##user2##user3##....
+                String[] userArray = users.split(MessageLibrary.DELIMITER);
+                Arrays.sort(userArray);
+                listUsers.setListData(userArray);
+                break;
+            case TYPE_BROADCAST_CLIENT:
+                //проверяем ник от чтобы не отправлять сообщение тому кто отправил,
+                // надо сравнить ники которое в сообщении и с тем который отправил это сообщение
+                String srcNickname = valeus[1];
+                if(srcNickname.equals(nickname)){
+                    return;
+                }
+                putMessageInChat(srcNickname, valeus[2]);
+                break;
+            default:
+                throw  new RuntimeException("Unknown message" + msg);
+        }
     }
 }
