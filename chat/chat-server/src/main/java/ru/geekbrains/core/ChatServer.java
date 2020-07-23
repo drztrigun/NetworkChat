@@ -1,17 +1,18 @@
 package ru.geekbrains.core;
 
+import ru.geekbrains.MessageSocketThread;
 import ru.geekbrains.MessageSocketThreadListener;
 import ru.geekbrains.ServerSocketThread;
 import ru.geekbrains.ServerSocketThreadListener;
 import ru.geekbrains.chat.common.MessageLibrary;
 
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.Vector;
 
 public class ChatServer implements ServerSocketThreadListener, MessageSocketThreadListener {
 
     private ServerSocketThread serverSocketThread;
-    private ClientSessionThread clientSession;
     private ChatServerListener listener;
     private AuthController authController;
     private Vector<ClientSessionThread> clients = new Vector<>();
@@ -35,7 +36,12 @@ public class ChatServer implements ServerSocketThreadListener, MessageSocketThre
             return;
         }
         serverSocketThread.interrupt();
+        disconnectAll();
     }
+
+    /*
+     * Server Socket Thread Listener Methods
+     */
 
     @Override
     public void onClientConnected() {
@@ -45,9 +51,8 @@ public class ChatServer implements ServerSocketThreadListener, MessageSocketThre
 
     @Override // подключение
     public void onSocketAccepted(Socket socket) {
-        this.clientSession = new ClientSessionThread(this, "ClientSessionThread", socket);
-        // вроде здесь мы должны пополнять наш vector новыми подключениями
-        clients.add(this.clientSession);
+        // пополняем наш vector новыми подключениями
+        clients.add(new ClientSessionThread(this, "ClientSessionThread", socket));
     }
 
     @Override    //обработка ошибок
@@ -59,37 +64,71 @@ public class ChatServer implements ServerSocketThreadListener, MessageSocketThre
     public void onClientTimeout(Throwable throwable) {
     }
 
+    /*
+     * Message Socket Thread Listener Methods
+     */
+
     @Override
-    public void onSocketReady() {
+    public void onSocketReady(MessageSocketThread thread) {
         logMessage("Socket ready");
     }
 
+    // закрытие сокета
     @Override
-    public void onSocketClosed() {
+    public void onSocketClosed(MessageSocketThread thread) {
+        ClientSessionThread clientSession = (ClientSessionThread) thread;
         logMessage("Socket closed");
+        clients.remove(thread);   // убираем пользователя из списка
+        if (clientSession.isAuthorized() &&!clientSession.isReconnected()){
+        sendToAllAouthorizedClients(MessageLibrary.getBroadcastMessage("server: ",
+                "User " + clientSession.getNickname() + " disconnected!"));
+        }
+        sendToAllAouthorizedClients(MessageLibrary.getUserList(getUserList()));
     }
 
     //логика переотправки сообщения
     @Override
-    public void onMessageReceived(String msg) {
+    public void onMessageReceived(MessageSocketThread thread, String msg) {
+        // кастим родителький поток к наследнику
+        ClientSessionThread clientSession = (ClientSessionThread)thread;
         if (clientSession.isAuthorized()) {
             processAuthorizedUserMessage(msg);
         } else{
-            processUnauthorizedUserMessage(msg);
+            processUnauthorizedUserMessage(clientSession, msg);
         }
     }
+
+    @Override    //обработка ошибок
+    public void onException(MessageSocketThread thread, Throwable throwable) {
+        throwable.printStackTrace();
+    }
+
 
     // метод по отправке сообщения если клиент авторизован
     private void processAuthorizedUserMessage(String msg) {
         logMessage(msg);
-//        for (ClientSessionThread  c : clients) {
-//                clientSession.broadcast(msg);
-//        }
-//        clientSession.sendMessage("echo: " + msg);
+        for (ClientSessionThread client : clients){  // цикл по сессиям
+            if(!client.isAuthorized()){  // првоеряем что клиетн авторизваон еали нет то следующий
+                continue;
+            }
+            client.sendMessage(msg); // отправка всем клиентам
+        }
+    }
+
+    // метод массовой рассылки всем авторизованным клиентам о присоединениие нового клиента
+    private void sendToAllAouthorizedClients(String msg){
+        for (ClientSessionThread client : clients){
+            if(!client.isAuthorized()){
+                continue;
+            }
+            // на строне сервера для того чтобы не отправлять сообщение тому кто отправил его надо распарсить сообщение
+            // и сравнить ники которое в сообщении и с тем который отправил это сообщение
+            client.sendMessage(msg);
+        }
     }
 
     // метод по отправке сообщения если клиент не авторизован
-    private void processUnauthorizedUserMessage(String msg) {
+    private void processUnauthorizedUserMessage(ClientSessionThread clientSession, String msg) {
         // парсим сообщение по делиметру
         String[] arr = msg.split(MessageLibrary.DELIMITER);
         if (arr.length < 4 ||
@@ -104,22 +143,55 @@ public class ChatServer implements ServerSocketThreadListener, MessageSocketThre
         if (nickname == null) {
             clientSession.authDeny();   // ошибка авторизации
             return;
+        } else { // логика если клиент переконнектился заново с другого устройства
+            ClientSessionThread oldClientSession = findClinetSessionNickname(nickname);
+            clientSession.authAccept(nickname);
+            if(oldClientSession == null){
+                sendToAllAouthorizedClients(MessageLibrary.getBroadcastMessage("server:", nickname + " connected"));
+            } else {
+                oldClientSession.setReconnected(true);
+                clients.remove(oldClientSession);
+            }
         }
         clientSession.authAccept(nickname);   // авторизация прошла успешна
+        sendToAllAouthorizedClients(MessageLibrary.getUserList(getUserList()));
     }
 
     public void disconnectAll() {
+        //делаем копию коллекции, для того чтобы не идти по одной коллекции и не удалет из нее же клиента
+        ArrayList<ClientSessionThread> currentClients = new ArrayList<>(clients);
+        for (ClientSessionThread client : currentClients){
+            client.close();            //отключили клиента
+            clients.remove(client);   // удаляем клиента из родительской коллекции
+        }
     }
 
     private void logMessage(String msg) {
         listener.onChatServerMessage(msg);
     }
-}
 
-// что-то я запутался где надо делать отправку сообщения всем пользователям, у меня получается только что отправляется
-// сообщение тока тому кто позже приконектился, получается не правильно заполняю массив
-// но не пойму как его тогда правильно заполнить
-//вопросов не так много
-//1) можно по подробнее про MessageLibrary и как понять что именно туда надо добавлять при ее создании
-//2) DELIMITER нам нужен для того чтобы разграничивать нашиданные после ввода их в поля при подключении
-// так как они идут сполныи текстом получается?
+    // метод по выводу списка пользователей
+    public String getUserList(){
+        StringBuilder sb = new StringBuilder();  //для конкъютинации большого количества строк
+        for (ClientSessionThread client: clients){
+            if (!client.isAuthorized()){
+                continue;
+            }
+            sb.append(client.getNickname()).append(MessageLibrary.DELIMITER);
+        }
+        return sb.toString();
+    }
+
+    // метод по неявному переподлючению пользователя к чату т.е. ни кто не увидит сообщений о переподлючении
+    private ClientSessionThread findClinetSessionNickname(String nickname){
+        for (ClientSessionThread client: clients) {
+            if(!client.isAuthorized()){
+                continue;
+            }
+            if(client.getNickname().equals(nickname)){
+                return client;
+            }
+        }
+        return null;
+    }
+}

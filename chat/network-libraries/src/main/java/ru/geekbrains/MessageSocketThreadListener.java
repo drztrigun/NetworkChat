@@ -2,11 +2,12 @@ package ru.geekbrains;
 
 public interface MessageSocketThreadListener {
 
-    void onSocketReady();
+    // дописываем MessageSocketThread thread чтобы понимать кто выполнил действие какой поток
+    void onSocketReady(MessageSocketThread thread);
 
-    void onSocketClosed();
+    void onSocketClosed(MessageSocketThread thread);
 
-    void onMessageReceived(String msg);
+    void onMessageReceived(MessageSocketThread thread, String msg);
 
-    void onException(Throwable throwable); // метод обработки ошибки
+    void onException(MessageSocketThread thread, Throwable throwable); // метод обработки ошибки
 }
